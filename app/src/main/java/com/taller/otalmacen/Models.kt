@@ -10,7 +10,8 @@ data class Item(
     val concepto: String,
     val proveedor: String = "",
     val alta: Boolean = false,
-    val baja: Boolean = false
+    val baja: Boolean = false,
+    val fotoBaja: String = ""
 )
 
 data class Orden(
@@ -23,6 +24,7 @@ data class Orden(
     val vin: String = "",
     val modelo: String = "",
     val taller: String = "",
+    val jefeTaller: String = "",
     val items: List<Item> = emptyList()
 )
 
@@ -59,6 +61,7 @@ object Store {
                     .put("proveedor", i.proveedor)
                     .put("alta", i.alta)
                     .put("baja", i.baja)
+                    .put("fotoBaja", i.fotoBaja)
             )
         }
         return JSONObject()
@@ -71,6 +74,7 @@ object Store {
             .put("vin", o.vin)
             .put("modelo", o.modelo)
             .put("taller", o.taller)
+            .put("jefeTaller", o.jefeTaller)
             .put("items", arr)
     }
 
@@ -84,7 +88,8 @@ object Store {
                 concepto = x.optString("concepto"),
                 proveedor = x.optString("proveedor"),
                 alta = x.optBoolean("alta"),
-                baja = x.optBoolean("baja")
+                baja = x.optBoolean("baja"),
+                fotoBaja = x.optString("fotoBaja")
             )
         }
         return Orden(
@@ -97,7 +102,14 @@ object Store {
             vin = j.optString("vin"),
             modelo = j.optString("modelo"),
             taller = j.optString("taller"),
+            jefeTaller = j.optString("jefeTaller"),
             items = items
         )
     }
+}
+
+/** Busca en todos los campos del encabezado; cada palabra escrita debe aparecer en alguno. */
+fun Orden.coincide(q: String): Boolean {
+    val texto = listOf(ot, seguro, elaboracion, entrega, unidad, vin, modelo, taller, jefeTaller).joinToString(" ")
+    return q.split(" ").filter { it.isNotBlank() }.all { texto.contains(it, ignoreCase = true) }
 }
