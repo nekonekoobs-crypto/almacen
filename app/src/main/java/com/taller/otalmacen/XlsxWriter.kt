@@ -22,9 +22,9 @@ object XlsxWriter {
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
         sb.append("<worksheet xmlns=\"$NS\">")
-        sb.append("<sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"10\" topLeftCell=\"A11\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>")
+        sb.append("<sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"11\" topLeftCell=\"A12\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>")
         sb.append("<cols>")
-        val anchos = listOf(14, 55, 26, 15, 15, 13, 8)
+        val anchos = listOf(18, 55, 26, 15, 15, 13, 8)
         anchos.forEachIndexed { i, w ->
             sb.append("<col min=\"${i + 1}\" max=\"${i + 1}\" width=\"$w\" customWidth=\"1\"/>")
         }
@@ -33,7 +33,7 @@ object XlsxWriter {
         val campos = listOf(
             "SEGURO:" to o.seguro, "ELABORACIÓN:" to o.elaboracion, "ENTREGA:" to o.entrega,
             "OT:" to o.ot, "UNIDAD:" to o.unidad, "VIN:" to o.vin,
-            "MODELO:" to o.modelo, "TALLER:" to o.taller
+            "MODELO:" to o.modelo, "TALLER:" to o.taller, "JEFE DE TALLER:" to o.jefeTaller
         )
         campos.forEachIndexed { i, (k, v) ->
             val r = i + 1
@@ -41,12 +41,12 @@ object XlsxWriter {
         }
 
         val titulos = listOf("PZ.", "CONCEPTO", "PROVEEDOR", "ALTA ALMACÉN", "BAJA ALMACÉN", "EXISTENCIA", "OK")
-        sb.append("<row r=\"10\">")
-        titulos.forEachIndexed { i, t -> sb.append(str("${'A' + i}10", t, 1)) }
+        sb.append("<row r=\"11\">")
+        titulos.forEachIndexed { i, t -> sb.append(str("${'A' + i}11", t, 1)) }
         sb.append("</row>")
 
         o.items.forEachIndexed { idx, p ->
-            val r = 11 + idx
+            val r = 12 + idx
             val e = when {
                 p.alta -> 3
                 p.baja -> 4
