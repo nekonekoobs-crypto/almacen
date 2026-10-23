@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,8 +29,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,16 +52,27 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                App()
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFF81C784),
+                    onPrimary = Color.Black
+                )
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    App()
+                }
             }
         }
     }
 }
 
-private val VERDE = Color(0xFFA5D6A7)
-private val ROJO = Color(0xFFEF9A9A)
-private val GRIS = Color(0xFFF1F1F1)
+private val VERDE = Color(0xFF2E7D32)
+private val ROJO = Color(0xFFC62828)
+private val GRIS = Color(0xFF2B2B2B)
+private val ERROR = Color(0xFFFF8A80)
 
 @Composable
 fun App() {
@@ -68,6 +82,7 @@ fun App() {
     var actual by remember { mutableStateOf<Orden?>(null) }
     var cargando by remember { mutableStateOf(false) }
     var mensaje by remember { mutableStateOf<String?>(null) }
+    var anexando by remember { mutableStateOf(false) }
 
     val fotoFile = remember {
         val d = File(ctx.cacheDir, "fotos")
@@ -81,12 +96,15 @@ fun App() {
     fun procesar(uri: Uri) {
         cargando = true
         mensaje = null
+        val anex = anexando
         OcrParser.leer(ctx, uri,
-            { o ->
+            { nuevo ->
                 cargando = false
-                Store.save(base, o)
+                val d = actual
+                val res = if (anex && d != null) fusionar(d, nuevo) else nuevo
+                Store.save(base, res)
                 ordenes = Store.loadAll(base)
-                actual = o
+                actual = res
             },
             { err ->
                 cargando = false
@@ -112,8 +130,8 @@ fun App() {
             ordenes = ordenes,
             cargando = cargando,
             mensaje = mensaje,
-            onFoto = { camara.launch(fotoUri) },
-            onGaleria = { galeria.launch("image/*") },
+            onFoto = { anexando = false; camara.launch(fotoUri) },
+            onGaleria = { anexando = false; galeria.launch("image/*") },
             onNueva = {
                 val nueva = Orden(id = System.currentTimeMillis())
                 Store.save(base, nueva)
@@ -137,6 +155,10 @@ fun App() {
                 actual = null
                 ordenes = Store.loadAll(base)
             },
+            cargando = cargando,
+            mensaje = mensaje,
+            onFotoMas = { anexando = true; camara.launch(fotoUri) },
+            onGaleriaMas = { anexando = true; galeria.launch("image/*") },
             onExportar = { exportar(ctx, o) }
         )
     }
@@ -157,6 +179,18 @@ fun exportar(ctx: Context, o: Orden) {
     ctx.startActivity(Intent.createChooser(i, "Compartir Excel"))
 }
 
+fun fusionar(a: Orden, n: Orden): Orden = a.copy(
+    seguro = a.seguro.ifBlank { n.seguro },
+    elaboracion = a.elaboracion.ifBlank { n.elaboracion },
+    entrega = a.entrega.ifBlank { n.entrega },
+    ot = a.ot.ifBlank { n.ot },
+    unidad = a.unidad.ifBlank { n.unidad },
+    vin = a.vin.ifBlank { n.vin },
+    modelo = a.modelo.ifBlank { n.modelo },
+    taller = a.taller.ifBlank { n.taller },
+    items = a.items + n.items
+)
+
 @Composable
 fun ListaScreen(
     ordenes: List<Orden>,
@@ -168,6 +202,31 @@ fun ListaScreen(
     onAbrir: (Orden) -> Unit,
     onBorrar: (Orden) -> Unit
 ) {
+    var busqueda by remember { mutableStateOf("") }
+    var porBorrar by remember { mutableStateOf<Orden?>(null) }
+    val filtradas = if (busqueda.isBlank()) ordenes
+    else ordenes.filter { it.ot.contains(busqueda.trim(), ignoreCase = true) }
+
+    val pendiente = porBorrar
+    if (pendiente != null) {
+        AlertDialog(
+            onDismissRequest = { porBorrar = null },
+            title = { Text("Eliminar OT") },
+            text = {
+                Text("¿Estás seguro de eliminar la OT ${pendiente.ot.ifBlank { "(sin número)" }}? Esta acción no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onBorrar(pendiente)
+                    porBorrar = null
+                }) { Text("Sí, eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { porBorrar = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -193,6 +252,15 @@ fun ListaScreen(
                 Text("Nueva OT vacía")
             }
         }
+        item {
+            OutlinedTextField(
+                value = busqueda,
+                onValueChange = { busqueda = it },
+                label = { Text("Buscar por OT") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
         if (cargando) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -203,19 +271,22 @@ fun ListaScreen(
             }
         }
         if (mensaje != null) {
-            item { Text(mensaje, color = Color(0xFFB00020)) }
+            item { Text(mensaje, color = ERROR) }
         }
-        items(ordenes, key = { it.id }) { o ->
+        if (filtradas.isEmpty() && busqueda.isNotBlank()) {
+            item { Text("No hay OT que coincidan con la búsqueda.") }
+        }
+        items(filtradas, key = { it.id }) { o ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = GRIS, contentColor = Color.Black)
+                colors = CardDefaults.cardColors(containerColor = GRIS, contentColor = Color.White)
             ) {
                 Column(Modifier.padding(12.dp)) {
                     Text("OT ${o.ot.ifBlank { "(sin número)" }}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("${o.unidad} · ${o.seguro} · ${o.items.size} piezas")
                     Row {
                         TextButton(onClick = { onAbrir(o) }) { Text("Abrir") }
-                        TextButton(onClick = { onBorrar(o) }) { Text("Borrar") }
+                        TextButton(onClick = { porBorrar = o }) { Text("Borrar") }
                     }
                 }
             }
@@ -229,7 +300,11 @@ private class Campo(val label: String, val valor: String, val set: (String) -> O
 fun DetalleScreen(
     orden: Orden,
     onCambio: (Orden) -> Unit,
+    cargando: Boolean,
+    mensaje: String?,
     onVolver: () -> Unit,
+    onFotoMas: () -> Unit,
+    onGaleriaMas: () -> Unit,
     onExportar: () -> Unit
 ) {
     val campos = listOf(
@@ -242,6 +317,31 @@ fun DetalleScreen(
         Campo("Modelo", orden.modelo) { v -> orden.copy(modelo = v) },
         Campo("Taller", orden.taller) { v -> orden.copy(taller = v) }
     )
+
+    var busq by remember { mutableStateOf("") }
+    var porBorrarPieza by remember { mutableStateOf<Item?>(null) }
+    val visibles = if (busq.isBlank()) orden.items
+    else orden.items.filter { it.concepto.contains(busq.trim(), ignoreCase = true) }
+
+    val pend = porBorrarPieza
+    if (pend != null) {
+        AlertDialog(
+            onDismissRequest = { porBorrarPieza = null },
+            title = { Text("Eliminar pieza") },
+            text = {
+                Text("¿Estás seguro de eliminar la pieza \"${pend.concepto.ifBlank { "(sin concepto)" }}\"? Esta acción no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onCambio(orden.copy(items = orden.items.filter { x -> x.id != pend.id }))
+                    porBorrarPieza = null
+                }) { Text("Sí, eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { porBorrarPieza = null }) { Text("Cancelar") }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(12.dp),
@@ -257,6 +357,33 @@ fun DetalleScreen(
                 }
             }
         }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onFotoMas, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                    Text("Capturar más fotos", fontSize = 17.sp)
+                }
+                OutlinedButton(onClick = onGaleriaMas, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("Agregar desde galería")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val nuevo = Item(id = System.currentTimeMillis(), pz = "1", concepto = "")
+                        onCambio(orden.copy(items = orden.items + nuevo))
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) { Text("Agregar pieza manualmente") }
+                if (cargando) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.width(12.dp))
+                        Text("Leyendo la foto…")
+                    }
+                }
+                if (mensaje != null) {
+                    Text(mensaje, color = ERROR)
+                }
+            }
+        }
         items(campos) { c ->
             OutlinedTextField(
                 value = c.valor,
@@ -267,17 +394,29 @@ fun DetalleScreen(
             )
         }
         item {
-            Text("Piezas (${orden.items.size})", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = busq,
+                onValueChange = { busq = it },
+                label = { Text("Buscar por concepto") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
-        items(orden.items, key = { it.id }) { p ->
+        item {
+            val titulo = if (busq.isBlank()) "Piezas (${orden.items.size})"
+            else "Piezas (${visibles.size} de ${orden.items.size})"
+            Text(titulo, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        if (visibles.isEmpty() && busq.isNotBlank()) {
+            item { Text("No hay piezas que coincidan con la búsqueda.") }
+        }
+        items(visibles, key = { it.id }) { p ->
             FilaPieza(
                 p = p,
                 onChange = { n ->
                     onCambio(orden.copy(items = orden.items.map { x -> if (x.id == n.id) n else x }))
                 },
-                onBorrar = {
-                    onCambio(orden.copy(items = orden.items.filter { x -> x.id != p.id }))
-                }
+                onBorrar = { porBorrarPieza = p }
             )
         }
         item {
@@ -302,7 +441,7 @@ fun FilaPieza(p: Item, onChange: (Item) -> Unit, onBorrar: () -> Unit) {
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = fondo, contentColor = Color.Black)
+        colors = CardDefaults.cardColors(containerColor = fondo, contentColor = Color.White)
     ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
