@@ -275,6 +275,10 @@ object OcrParser {
             val u = up.uppercase()
             if (!up.any { it.isLetter() }) continue
             if (u.contains("PROVEEDOR") || u.contains("COSTOS") || u.contains("CONCEPTO")) continue
+            // Nada del encabezado (etiquetas, fechas, VIN, OT, unidad) puede entrar como pieza
+            if (esEtiqueta(u) || FECHA.containsMatchIn(u)) continue
+            if (u.replace(" ", "").let { it.length == 17 && it.any { c -> c.isDigit() } && it.any { c -> c.isLetter() } }) continue
+            if (u == unidad.uppercase() || u == taller.uppercase() || u == seguro.uppercase()) continue
             var texto = up.replaceFirst(Regex("^\\d{1,2}[.,]\\s+"), "")
             var pz: String? = null
             val m = conQty.find(texto)
