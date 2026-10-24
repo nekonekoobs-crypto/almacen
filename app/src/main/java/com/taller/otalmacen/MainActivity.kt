@@ -520,7 +520,7 @@ fun DetalleScreen(
         item {
             OutlinedButton(
                 onClick = {
-                    val nuevo = Item(id = System.currentTimeMillis(), pz = "1", concepto = "")
+                    val nuevo = Item(id = System.currentTimeMillis(), pz = "1", concepto = "", num = (orden.items.maxOfOrNull { x -> x.num } ?: 0) + 1)
                     onCambio(orden.copy(items = orden.items + nuevo))
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp)
@@ -550,6 +550,13 @@ fun FilaPieza(
     ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = if (p.num > 0) p.num.toString() else "",
+                    onValueChange = { v -> onChange(p.copy(num = v.filter { c -> c.isDigit() }.take(3).toIntOrNull() ?: 0)) },
+                    label = { Text("No.") },
+                    singleLine = true,
+                    modifier = Modifier.width(72.dp)
+                )
                 OutlinedTextField(
                     value = p.pz,
                     onValueChange = { v -> onChange(p.copy(pz = v)) },
