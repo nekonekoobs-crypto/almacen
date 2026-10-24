@@ -1,4 +1,3 @@
-ADM, [23/10/2026 10:23 p. m.]
 package com.taller.otalmacen
 
 import org.json.JSONArray
@@ -124,7 +123,6 @@ fun normConcepto(s: String): String =
         .replace(Regex("\\p{M}"), "")
         .replace(Regex("[^a-z0-9]"), "")
 
-ADM, [23/10/2026 10:23 p. m.]
 private fun distancia(a: String, b: String): Int {
     var prev = IntArray(b.length + 1) { it }
     for (i in 1..a.length) {
