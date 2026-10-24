@@ -14,7 +14,7 @@ import kotlin.math.hypot
 
 object OcrParser {
 
-    private class L(val text: String, val x: Int, val cx: Int, val y: Int, val h: Int)
+    private class L(val text: String, val x: Int, val cx: Int, val y: Int, val h: Int, val els: List<Pair<String, Int>> = emptyList())
 
     private val ETIQUETAS = listOf("SEGURO", "ELABORACI", "ENTREGA", "MODELO", "VIN", "TRAZO")
     private val MARCAS = listOf(
@@ -162,7 +162,8 @@ object OcrParser {
                 } else {
                     b.height()
                 }
-                L(l.text.trim(), b.left, cx, (b.centerY() - k * cx).toInt(), alto)
+                val els = l.elements.mapNotNull { e -> e.boundingBox?.let { bb -> Pair(e.text, bb.left) } }
+                L(l.text.trim(), b.left, cx, (b.centerY() - k * cx).toInt(), alto, els)
             }
         }
 
@@ -257,28 +258,61 @@ object OcrParser {
         }.maxByOrNull { it.cx }?.text ?: ""
 
         // ---------- Piezas ----------
+        // La columna PROVEEDOR (letra a mano, fechas) queda fuera: no es parte del concepto
+        val titProv = lines.filter { it.text.uppercase().contains("PROVEED") }.minByOrNull { it.y }
+        val anchoPag = lines.maxOf { it.cx }
+        val limiteX = if (titProv != null && titProv.x > anchoPag * 0.45) {
+            titProv.x - (titProv.h * 1.5).toInt()
+        } else {
+            Int.MAX_VALUE
+        }
+
         val body = lines.filter { it.y > headerY + (ancla?.h ?: 0) / 2 }.sortedBy { it.y }
         val soloNum = Regex("^\\d{1,2}$")
         val conQty = Regex("^(\\d{1,2})\\s+(\\p{L}.*)$")
-        val numeros = body.filter { soloNum.matches(it.text.replace(" ", "")) }
+        val numRx = Regex("^(\\d{1,3})\\s*[.,]?$")
+        val encabezadoRx = Regex("^(SEGURO\\b|ELABORACI|ENTREGA\\b|MODELO\\b|VIN\\b|TRAZO\\b)")
+
+        // Columna "No." (franja roja de la izquierda): números sueltos a la izquierda del título PZ
+        val titPz = lines.firstOrNull { soloPz.matches(it.text.uppercase().trim()) }
+        val colNum: List<L> = if (titPz == null) {
+            emptyList()
+        } else {
+            body.filter { numRx.matches(it.text.replace(" ", "")) && it.cx < titPz.x }
+        }
+        val numeros = body.filter { soloNum.matches(it.text.replace(" ", "")) && it !in colNum }
 
         val altos = body.filter { it.text.length >= 6 }.map { it.h }.sorted()
         val altura = if (altos.isEmpty()) 30 else altos[altos.size / 2]
 
+        // No. de renglón que está en la misma fila que la línea
+        fun numCercano(l: L): Int? {
+            val c = colNum.filter { abs(it.y - l.y) < altura * 0.8 }
+                .minByOrNull { abs(it.y - l.y) } ?: return null
+            return numRx.find(c.text.replace(" ", ""))?.groupValues?.get(1)?.toIntOrNull()
+        }
+
+        val porNumero = colNum.size >= 3
         val items = mutableListOf<Item>()
         val base = System.currentTimeMillis()
         var ultX = 0
         var ultY = Int.MIN_VALUE
         var continuo = false
         for (l in body) {
-            val up = l.text.trim()
+            val recorte = if (limiteX != Int.MAX_VALUE && l.els.isNotEmpty()) {
+                l.els.filter { it.second < limiteX }.joinToString(" ") { it.first }
+            } else {
+                l.text
+            }
+            val up = recorte.trim()
             val u = up.uppercase()
             if (!up.any { it.isLetter() }) continue
             if (u.contains("PROVEEDOR") || u.contains("COSTOS") || u.contains("CONCEPTO")) continue
-            // Nada del encabezado (etiquetas, fechas, VIN, OT, unidad) puede entrar como pieza
-            if (esEtiqueta(u) || FECHA.containsMatchIn(u)) continue
+            // Nada del encabezado (etiquetas, fechas, VIN, unidad, taller) puede entrar como pieza
+            if (encabezadoRx.containsMatchIn(u) || FECHA.containsMatchIn(u)) continue
             if (u.replace(" ", "").let { it.length == 17 && it.any { c -> c.isDigit() } && it.any { c -> c.isLetter() } }) continue
             if (u == unidad.uppercase() || u == taller.uppercase() || u == seguro.uppercase()) continue
+
             var texto = up.replaceFirst(Regex("^\\d{1,2}[.,]\\s+"), "")
             var pz: String? = null
             val m = conQty.find(texto)
@@ -291,13 +325,18 @@ object OcrParser {
                     .maxByOrNull { it.x }
                 if (q != null) pz = q.text.replace(" ", "")
             }
+            val numFila = numCercano(l)
+            // Si hay No. de renglón pero no se leyó la cantidad, es una pieza de 1
+            if (pz == null && porNumero && numFila != null) pz = "1"
+
             if (pz != null) {
-                items.add(Item(base + items.size, pz, texto.trim()))
+                items.add(Item(base + items.size, pz, texto.trim(), num = numFila ?: 0))
                 ultX = l.x
                 ultY = l.y
                 continuo = false
             } else {
                 val dy = l.y - ultY
+                // Un concepto solo puede ocupar 2 renglones de texto como máximo
                 val esContinuacion = items.isNotEmpty() && !continuo &&
                     dy > 0 && dy < altura * 1.25 && abs(l.x - ultX) < 50
                 if (esContinuacion) {
@@ -305,13 +344,22 @@ object OcrParser {
                     items.add(last.copy(concepto = (last.concepto + " " + texto).trim()))
                     ultY = l.y
                     continuo = true
-                } else if (texto.length >= 4) {
+                } else if (!porNumero && texto.length >= 4) {
                     items.add(Item(base + items.size, "1", texto.trim()))
                     ultX = l.x
                     ultY = l.y
                     continuo = false
                 }
             }
+        }
+
+        // Relación por número: si no se leyó un No., sigue la secuencia; los números van siempre en orden
+        var ult = 0
+        val numerados = items.mapIndexed { i, p ->
+            val ok = p.num > 0 && (i == 0 || (p.num > ult && p.num <= ult + 3))
+            val n = if (ok) p.num else ult + 1
+            ult = n
+            p.copy(num = n)
         }
 
         return Orden(
@@ -324,7 +372,7 @@ object OcrParser {
             vin = vin,
             modelo = modelo,
             taller = taller,
-            items = items
+            items = numerados
         )
     }
 }
