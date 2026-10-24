@@ -1,5 +1,6 @@
 package com.taller.otalmacen
 
+import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -26,6 +27,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -390,8 +392,6 @@ fun ListaScreen(
     }
 }
 
-private class Campo(val label: String, val valor: String, val set: (String) -> Orden)
-
 @Composable
 fun DetalleScreen(
     orden: Orden,
@@ -406,15 +406,15 @@ fun DetalleScreen(
 ) {
     val pal = paleta()
     val campos = listOf(
-        Campo("Seguro", orden.seguro) { v -> orden.copy(seguro = v) },
-        Campo("Elaboración", orden.elaboracion) { v -> orden.copy(elaboracion = v) },
-        Campo("Entrega", orden.entrega) { v -> orden.copy(entrega = v) },
-        Campo("OT", orden.ot) { v -> orden.copy(ot = v) },
-        Campo("Unidad", orden.unidad) { v -> orden.copy(unidad = v) },
-        Campo("VIN", orden.vin) { v -> orden.copy(vin = v.uppercase()) },
-        Campo("Modelo", orden.modelo) { v -> orden.copy(modelo = v) },
-        Campo("Taller", orden.taller) { v -> orden.copy(taller = v) },
-        Campo("Jefe de taller", orden.jefeTaller) { v -> orden.copy(jefeTaller = v) }
+        CampoUi(1) { CampoTexto("OT", orden.ot) { v -> onCambio(orden.copy(ot = v)) } },
+        CampoUi(1) { CampoTexto("Seguro", orden.seguro) { v -> onCambio(orden.copy(seguro = v)) } },
+        CampoUi(1) { CampoFecha("Elaboración", orden.elaboracion) { v -> onCambio(orden.copy(elaboracion = v)) } },
+        CampoUi(1) { CampoFecha("Entrega", orden.entrega) { v -> onCambio(orden.copy(entrega = v)) } },
+        CampoUi(2) { CampoTexto("Unidad", orden.unidad) { v -> onCambio(orden.copy(unidad = v)) } },
+        CampoUi(2) { CampoTexto("VIN", orden.vin) { v -> onCambio(orden.copy(vin = v.uppercase())) } },
+        CampoUi(1) { CampoTexto("Modelo", orden.modelo) { v -> onCambio(orden.copy(modelo = v)) } },
+        CampoUi(1) { CampoTexto("Taller", orden.taller) { v -> onCambio(orden.copy(taller = v)) } },
+        CampoUi(2) { CampoTexto("Jefe de taller", orden.jefeTaller) { v -> onCambio(orden.copy(jefeTaller = v)) } }
     )
 
     var busq by remember { mutableStateOf("") }
@@ -470,13 +470,6 @@ fun DetalleScreen(
                 OutlinedButton(onClick = onGaleriaMas, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                     Text("Agregar desde galería")
                 }
-                OutlinedButton(
-                    onClick = {
-                        val nuevo = Item(id = System.currentTimeMillis(), pz = "1", concepto = "")
-                        onCambio(orden.copy(items = orden.items + nuevo))
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp)
-                ) { Text("Agregar pieza manualmente") }
                 if (cargando) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator()
@@ -489,15 +482,7 @@ fun DetalleScreen(
                 }
             }
         }
-        items(campos) { c ->
-            OutlinedTextField(
-                value = c.valor,
-                onValueChange = { v -> onCambio(c.set(v)) },
-                label = { Text(c.label) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+        item { EncabezadoResponsivo(campos) }
         item {
             OutlinedTextField(
                 value = busq,
@@ -533,7 +518,7 @@ fun DetalleScreen(
                     onCambio(orden.copy(items = orden.items + nuevo))
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp)
-            ) { Text("Agregar pieza") }
+            ) { Text("Agregar pieza manualmente") }
         }
         item { Spacer(Modifier.height(40.dp)) }
     }
@@ -696,6 +681,87 @@ fun VisorFoto(nombre: String, onCerrar: () -> Unit) {
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = 8.dp)
             ) {
                 Text("✕", fontSize = 30.sp, color = Color.White)
+            }
+        }
+    }
+}
+
+class CampoUi(val span: Int, val contenido: @Composable () -> Unit)
+
+@Composable
+fun CampoTexto(label: String, valor: String, onCambio: (String) -> Unit) {
+    OutlinedTextField(
+        value = valor,
+        onValueChange = onCambio,
+        label = { Text(label, maxLines = 1) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+fun CampoFecha(label: String, valor: String, onCambio: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = valor,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label, maxLines = 1) },
+            singleLine = true,
+            trailingIcon = { Text("📅") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Box(
+            Modifier
+                .matchParentSize()
+                .clickable {
+                    val hoy = java.util.Calendar.getInstance()
+                    val p = fechaAPartes(valor)
+                    val dia = p?.first ?: hoy.get(java.util.Calendar.DAY_OF_MONTH)
+                    val mes = (p?.second ?: (hoy.get(java.util.Calendar.MONTH) + 1)) - 1
+                    val anio = p?.third ?: hoy.get(java.util.Calendar.YEAR)
+                    DatePickerDialog(
+                        ctx,
+                        { _, a, m, d -> onCambio("%02d/%02d/%04d".format(d, m + 1, a)) },
+                        anio, mes, dia
+                    ).show()
+                }
+        )
+    }
+}
+
+/** Acomoda los cuadros del encabezado en columnas según el ancho de la pantalla. */
+@Composable
+fun EncabezadoResponsivo(campos: List<CampoUi>) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val n = ((maxWidth + 8.dp) / 158.dp).toInt().coerceIn(1, 4)
+        val filas = mutableListOf<MutableList<CampoUi>>()
+        var fila = mutableListOf<CampoUi>()
+        var usados = 0
+        for (c in campos) {
+            val sp = minOf(c.span, n)
+            if (usados + sp > n) {
+                filas.add(fila)
+                fila = mutableListOf()
+                usados = 0
+            }
+            fila.add(c)
+            usados += sp
+        }
+        if (fila.isNotEmpty()) filas.add(fila)
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (f in filas) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    var suma = 0
+                    for (c in f) {
+                        val sp = minOf(c.span, n)
+                        suma += sp
+                        Box(Modifier.weight(sp.toFloat())) { c.contenido() }
+                    }
+                    if (suma < n) Spacer(Modifier.weight((n - suma).toFloat()))
+                }
             }
         }
     }
