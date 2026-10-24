@@ -1,18 +1,65 @@
 package com.taller.otalmacen
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlin.math.abs
+import kotlin.math.hypot
 
 object OcrParser {
 
     private class L(val text: String, val x: Int, val y: Int, val h: Int)
 
+    /** Inclinación típica del texto en la foto (pendiente), para enderezar las alturas. */
+    private fun pendiente(t: Text): Double {
+        val lista = mutableListOf<Double>()
+        for (b in t.textBlocks) {
+            for (l in b.lines) {
+                val p = l.cornerPoints
+                if (p == null || p.size < 2 || l.text.length < 8) continue
+                val dx = (p[1].x - p[0].x).toDouble()
+                if (dx < 100) continue
+                lista.add((p[1].y - p[0].y) / dx)
+            }
+        }
+        if (lista.isEmpty()) return 0.0
+        lista.sort()
+        val m = lista[lista.size / 2]
+        return if (m > 0.25 || m < -0.25) 0.0 else m
+    }
+
     fun leer(context: Context, uri: Uri, onDone: (Orden) -> Unit, onError: (String) -> Unit) {
+        val ui = Handler(Looper.getMainLooper())
+        Thread {
+            val mejorada: Bitmap? = try {
+                Imagen.mejorar(context, uri)
+            } catch (e: Throwable) {
+                null
+            }
+            ui.post {
+                if (mejorada == null) {
+                    leerOriginal(context, uri, onDone, onError)
+                } else {
+                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                    recognizer.process(InputImage.fromBitmap(mejorada, 0))
+                        .addOnSuccessListener { t ->
+                            val o = parse(t)
+                            // Si con el filtro no se encontró nada, se prueba con la foto original
+                            if (o.items.isEmpty()) leerOriginal(context, uri, onDone, onError) else onDone(o)
+                        }
+                        .addOnFailureListener { leerOriginal(context, uri, onDone, onError) }
+                }
+            }
+        }.start()
+    }
+
+    private fun leerOriginal(context: Context, uri: Uri, onDone: (Orden) -> Unit, onError: (String) -> Unit) {
         val image = try {
             InputImage.fromFilePath(context, uri)
         } catch (e: Exception) {
@@ -31,9 +78,21 @@ object OcrParser {
     }
 
     private fun parse(t: Text): Orden {
+        val k = pendiente(t)
         val lines = t.textBlocks.flatMap { it.lines }.mapNotNull { l ->
             val b = l.boundingBox
-            if (b == null) null else L(l.text.trim(), b.left, b.centerY(), b.height())
+            if (b == null) {
+                null
+            } else {
+                val cx = (b.left + b.right) / 2
+                val p = l.cornerPoints
+                val alto = if (p != null && p.size >= 4) {
+                    hypot((p[3].x - p[0].x).toDouble(), (p[3].y - p[0].y).toDouble()).toInt()
+                } else {
+                    b.height()
+                }
+                L(l.text.trim(), b.left, (b.centerY() - k * cx).toInt(), alto)
+            }
         }
         val completo = t.text.uppercase()
         val cabeza = if (completo.contains("CONCEPTO")) completo.substringBefore("CONCEPTO") else completo
@@ -70,10 +129,14 @@ object OcrParser {
         val conQty = Regex("^(\\d{1,2})\\s+(\\p{L}.*)$")
         val numeros = body.filter { soloNum.matches(it.text.replace(" ", "")) }
 
+        val altos = body.filter { it.text.length >= 6 }.map { it.h }.sorted()
+        val altura = if (altos.isEmpty()) 30 else altos[altos.size / 2]
+
         val items = mutableListOf<Item>()
         val base = System.currentTimeMillis()
         var ultX = 0
         var ultY = Int.MIN_VALUE
+        var continuo = false
         for (l in body) {
             val up = l.text.trim()
             val u = up.uppercase()
@@ -87,7 +150,7 @@ object OcrParser {
                 texto = m.groupValues[2]
             } else {
                 val q = numeros
-                    .filter { it.x < l.x && abs(it.y - l.y) < l.h * 0.9 && l.x - it.x < 300 }
+                    .filter { it.x < l.x && abs(it.y - l.y) < altura * 0.7 && l.x - it.x < altura * 3.5 }
                     .maxByOrNull { it.x }
                 if (q != null) pz = q.text.replace(" ", "")
             }
@@ -95,10 +158,22 @@ object OcrParser {
                 items.add(Item(base + items.size, pz, texto.trim()))
                 ultX = l.x
                 ultY = l.y
-            } else if (items.isNotEmpty() && l.y - ultY < l.h * 2.4 && abs(l.x - ultX) < 60) {
-                val last = items.removeAt(items.size - 1)
-                items.add(last.copy(concepto = (last.concepto + " " + texto).trim()))
-                ultY = l.y
+                continuo = false
+            } else {
+                val dy = l.y - ultY
+                val esContinuacion = items.isNotEmpty() && !continuo &&
+                    dy > 0 && dy < altura * 1.25 && abs(l.x - ultX) < 50
+                if (esContinuacion) {
+                    val last = items.removeAt(items.size - 1)
+                    items.add(last.copy(concepto = (last.concepto + " " + texto).trim()))
+                    ultY = l.y
+                    continuo = true
+                } else if (texto.length >= 4) {
+                    items.add(Item(base + items.size, "1", texto.trim()))
+                    ultX = l.x
+                    ultY = l.y
+                    continuo = false
+                }
             }
         }
 
