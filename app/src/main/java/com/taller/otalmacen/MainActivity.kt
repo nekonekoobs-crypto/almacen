@@ -1,4 +1,3 @@
-ADM, [23/10/2026 10:25 p. m.]
 package com.taller.otalmacen
 
 import android.app.DatePickerDialog
@@ -86,9 +85,7 @@ class MainActivity : ComponentActivity() {
                 darkColorScheme(primary = Color(0xFF81C784), onPrimary = Color.Black)
             } else {
                 lightColorScheme(primary = Color(0xFF2E7D32), onPrimary = Color.White)
-
-ADM, [23/10/2026 10:25 p. m.]
-}
+            }
             CompositionLocalProvider(LocalOscuro provides oscuro) {
                 MaterialTheme(colorScheme = esquema) {
                     Surface(
@@ -198,8 +195,7 @@ fun App(modo: Int, onModo: () -> Unit) {
         if (uri != null) procesar(uri)
     }
 
-ADM, [23/10/2026 10:25 p. m.]
-BackHandler(enabled = actual != null) {
+    BackHandler(enabled = actual != null) {
         actual = null
         ordenes = Store.loadAll(base)
     }
@@ -319,8 +315,7 @@ fun ListaScreen(
         )
     }
 
-ADM, [23/10/2026 10:25 p. m.]
-LazyColumn(
+    LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -422,9 +417,7 @@ fun DetalleScreen(
         CampoUi(1) { CampoFecha("Elaboración", orden.elaboracion) { v -> onCambio(orden.copy(elaboracion = v)) } },
         CampoUi(1) { CampoFecha("Entrega", orden.entrega) { v -> onCambio(orden.copy(entrega = v)) } },
         CampoUi(2) { CampoTexto("Unidad", orden.unidad) { v -> onCambio(orden.copy(unidad = v)) } },
-
-ADM, [23/10/2026 10:25 p. m.]
-CampoUi(2) { CampoTexto("VIN", orden.vin) { v -> onCambio(orden.copy(vin = v.uppercase())) } },
+        CampoUi(2) { CampoTexto("VIN", orden.vin) { v -> onCambio(orden.copy(vin = v.uppercase())) } },
         CampoUi(1) { CampoTexto("Modelo", orden.modelo) { v -> onCambio(orden.copy(modelo = v)) } },
         CampoUi(1) { CampoTexto("Taller", orden.taller) { v -> onCambio(orden.copy(taller = v)) } },
         CampoUi(2) { CampoTexto("Jefe de taller", orden.jefeTaller) { v -> onCambio(orden.copy(jefeTaller = v)) } }
@@ -514,9 +507,7 @@ CampoUi(2) { CampoTexto("VIN", orden.vin) { v -> onCambio(orden.copy(vin = v.upp
             item { Text("No hay piezas que coincidan con la búsqueda.") }
         }
         items(visibles, key = { it.id }) { p ->
-
-ADM, [23/10/2026 10:25 p. m.]
-FilaPieza(
+            FilaPieza(
                 p = p,
                 onChange = { n ->
                     onCambio(orden.copy(items = orden.items.map { x -> if (x.id == n.id) n else x }))
@@ -616,9 +607,7 @@ fun guardarFotoBaja(ctx: Context, origen: File, nombre: String): String {
     dir.mkdirs()
     val medidas = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(origen.path, medidas)
-
-ADM, [23/10/2026 10:25 p. m.]
-var muestra = 1
+    var muestra = 1
     while (medidas.outWidth / muestra > 1600 || medidas.outHeight / muestra > 1600) muestra *= 2
     val opciones = BitmapFactory.Options().apply { inSampleSize = muestra }
     var bmp: Bitmap = BitmapFactory.decodeFile(origen.path, opciones) ?: return ""
@@ -728,9 +717,7 @@ fun CampoFecha(label: String, valor: String, onCambio: (String) -> Unit) {
             singleLine = true,
             trailingIcon = { Text("📅") },
             modifier = Modifier.fillMaxWidth()
-
-ADM, [23/10/2026 10:25 p. m.]
-)
+        )
         Box(
             Modifier
                 .matchParentSize()
