@@ -24,7 +24,7 @@ object XlsxWriter {
         sb.append("<worksheet xmlns=\"$NS\">")
         sb.append("<sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"11\" topLeftCell=\"A12\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>")
         sb.append("<cols>")
-        val anchos = listOf(18, 55, 26, 15, 15, 13, 8)
+        val anchos = listOf(6, 8, 55, 26, 15, 15, 13, 8)
         anchos.forEachIndexed { i, w ->
             sb.append("<col min=\"${i + 1}\" max=\"${i + 1}\" width=\"$w\" customWidth=\"1\"/>")
         }
@@ -40,7 +40,7 @@ object XlsxWriter {
             sb.append("<row r=\"$r\">").append(str("A$r", k, 5)).append(str("B$r", v, 0)).append("</row>")
         }
 
-        val titulos = listOf("PZ.", "CONCEPTO", "PROVEEDOR", "ALTA ALMACÉN", "BAJA ALMACÉN", "EXISTENCIA", "OK")
+        val titulos = listOf("No.", "PZ.", "CONCEPTO", "PROVEEDOR", "ALTA ALMACÉN", "BAJA ALMACÉN", "EXISTENCIA", "OK")
         sb.append("<row r=\"11\">")
         titulos.forEachIndexed { i, t -> sb.append(str("${'A' + i}11", t, 1)) }
         sb.append("</row>")
@@ -54,13 +54,14 @@ object XlsxWriter {
             }
             val n = p.pz.toDoubleOrNull()
             sb.append("<row r=\"$r\">")
-            sb.append(if (n != null) num("A$r", n, e) else str("A$r", p.pz, e))
-            sb.append(str("B$r", p.concepto, e))
-            sb.append(if (p.proveedor.isBlank()) vacia("C$r", e) else str("C$r", p.proveedor, e))
-            sb.append(if (p.alta) num("D$r", n ?: 1.0, e) else vacia("D$r", e))
-            sb.append(if (p.baja) num("E$r", n ?: 1.0, e) else vacia("E$r", e))
-            sb.append("<c r=\"F$r\" s=\"$e\"><f>D$r-E$r</f></c>")
-            sb.append(vacia("G$r", e))
+            sb.append(if (p.num > 0) num("A$r", p.num.toDouble(), e) else vacia("A$r", e))
+            sb.append(if (n != null) num("B$r", n, e) else str("B$r", p.pz, e))
+            sb.append(str("C$r", p.concepto, e))
+            sb.append(if (p.proveedor.isBlank()) vacia("D$r", e) else str("D$r", p.proveedor, e))
+            sb.append(if (p.alta) num("E$r", n ?: 1.0, e) else vacia("E$r", e))
+            sb.append(if (p.baja) num("F$r", n ?: 1.0, e) else vacia("F$r", e))
+            sb.append("<c r=\"G$r\" s=\"$e\"><f>E$r-F$r</f></c>")
+            sb.append(vacia("H$r", e))
             sb.append("</row>")
         }
         sb.append("</sheetData></worksheet>")
