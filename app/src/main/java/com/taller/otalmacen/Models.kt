@@ -11,7 +11,8 @@ data class Item(
     val proveedor: String = "",
     val alta: Boolean = false,
     val baja: Boolean = false,
-    val fotoBaja: String = ""
+    val fotoBaja: String = "",
+    val num: Int = 0   // No. de renglón (columna roja de la hoja), antes de PZ
 )
 
 data class Orden(
@@ -62,6 +63,7 @@ object Store {
                     .put("alta", i.alta)
                     .put("baja", i.baja)
                     .put("fotoBaja", i.fotoBaja)
+                    .put("num", i.num)
             )
         }
         return JSONObject()
@@ -89,7 +91,8 @@ object Store {
                 proveedor = x.optString("proveedor"),
                 alta = x.optBoolean("alta"),
                 baja = x.optBoolean("baja"),
-                fotoBaja = x.optString("fotoBaja")
+                fotoBaja = x.optString("fotoBaja"),
+                num = x.optInt("num", 0)
             )
         }
         return Orden(
@@ -137,21 +140,25 @@ private fun distancia(a: String, b: String): Int {
     return prev[b.length]
 }
 
-/** Dos conceptos se consideran la misma pieza si son iguales o casi iguales (errores típicos del OCR). */
-fun mismaPieza(a: String, b: String): Boolean {
+/** Qué tan parecidos son dos conceptos, de 0.0 a 1.0 (tolera errores típicos del OCR). */
+fun parecido(a: String, b: String): Double {
     val x = normConcepto(a)
     val y = normConcepto(b)
-    if (x.isEmpty() || y.isEmpty()) return false
-    if (x == y) return true
-    val largo = maxOf(x.length, y.length)
-    return 1.0 - distancia(x, y).toDouble() / largo >= 0.85
+    if (x.isEmpty() || y.isEmpty()) return 0.0
+    if (x == y) return 1.0
+    return 1.0 - distancia(x, y).toDouble() / maxOf(x.length, y.length)
 }
+
+/** Dos conceptos se consideran la misma pieza si son iguales o casi iguales. */
+fun mismaPieza(a: String, b: String): Boolean = parecido(a, b) >= 0.85
 
 class ResultadoFusion(val items: List<Item>, val agregadas: Int, val repetidas: Int)
 
 /**
- * Agrega a la OT solo las piezas que todavía no existen. Las piezas ya guardadas
- * (con su alta, baja, proveedor y foto) nunca se tocan.
+ * Agrega a la OT solo las piezas que todavía no existen. Una pieza es repetida si:
+ *  - tiene el mismo No. de renglón y un concepto parecido, o
+ *  - su concepto es casi idéntico a uno existente.
+ * Las piezas ya guardadas (con su alta, baja, proveedor y foto) nunca se tocan.
  */
 fun fusionarItems(actuales: List<Item>, nuevos: List<Item>): ResultadoFusion {
     val lista = actuales.toMutableList()
@@ -160,7 +167,9 @@ fun fusionarItems(actuales: List<Item>, nuevos: List<Item>): ResultadoFusion {
     var siguienteId = (lista.maxOfOrNull { it.id } ?: System.currentTimeMillis()) + 1
     for (n in nuevos) {
         if (n.concepto.isBlank()) continue
-        if (lista.any { mismaPieza(it.concepto, n.concepto) }) {
+        val igualNumero = n.num > 0 && lista.any { it.num == n.num && parecido(it.concepto, n.concepto) >= 0.5 }
+        val igualTexto = lista.any { mismaPieza(it.concepto, n.concepto) }
+        if (igualNumero || igualTexto) {
             repetidas++
         } else {
             val id = if (lista.any { it.id == n.id }) siguienteId++ else n.id
