@@ -1,3 +1,4 @@
+ADM, [23/10/2026 10:23 p. m.]
 package com.taller.otalmacen
 
 import org.json.JSONArray
@@ -112,4 +113,62 @@ object Store {
 fun Orden.coincide(q: String): Boolean {
     val texto = listOf(ot, seguro, elaboracion, entrega, unidad, vin, modelo, taller, jefeTaller).joinToString(" ")
     return q.split(" ").filter { it.isNotBlank() }.all { texto.contains(it, ignoreCase = true) }
+}
+
+
+// ---------- Validador de piezas repetidas ----------
+
+/** Texto en minúsculas, sin acentos, espacios ni signos, para comparar conceptos. */
+fun normConcepto(s: String): String =
+    java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}"), "")
+        .replace(Regex("[^a-z0-9]"), "")
+
+ADM, [23/10/2026 10:23 p. m.]
+private fun distancia(a: String, b: String): Int {
+    var prev = IntArray(b.length + 1) { it }
+    for (i in 1..a.length) {
+        val cur = IntArray(b.length + 1)
+        cur[0] = i
+        for (j in 1..b.length) {
+            val costo = if (a[i - 1] == b[j - 1]) 0 else 1
+            cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + costo)
+        }
+        prev = cur
+    }
+    return prev[b.length]
+}
+
+/** Dos conceptos se consideran la misma pieza si son iguales o casi iguales (errores típicos del OCR). */
+fun mismaPieza(a: String, b: String): Boolean {
+    val x = normConcepto(a)
+    val y = normConcepto(b)
+    if (x.isEmpty() || y.isEmpty()) return false
+    if (x == y) return true
+    val largo = maxOf(x.length, y.length)
+    return 1.0 - distancia(x, y).toDouble() / largo >= 0.85
+}
+
+class ResultadoFusion(val items: List<Item>, val agregadas: Int, val repetidas: Int)
+
+/**
+ * Agrega a la OT solo las piezas que todavía no existen. Las piezas ya guardadas
+ * (con su alta, baja, proveedor y foto) nunca se tocan.
+ */
+fun fusionarItems(actuales: List<Item>, nuevos: List<Item>): ResultadoFusion {
+    val lista = actuales.toMutableList()
+    var agregadas = 0
+    var repetidas = 0
+    var siguienteId = (lista.maxOfOrNull { it.id } ?: System.currentTimeMillis()) + 1
+    for (n in nuevos) {
+        if (n.concepto.isBlank()) continue
+        if (lista.any { mismaPieza(it.concepto, n.concepto) }) {
+            repetidas++
+        } else {
+            val id = if (lista.any { it.id == n.id }) siguienteId++ else n.id
+            lista.add(n.copy(id = id))
+            agregadas++
+        }
+    }
+    return ResultadoFusion(lista, agregadas, repetidas)
 }
