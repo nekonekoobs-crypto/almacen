@@ -359,7 +359,7 @@ object OcrParser {
             val ok = p.num > 0 && (i == 0 || (p.num > ult && p.num <= ult + 3))
             val n = if (ok) p.num else ult + 1
             ult = n
-            p.copy(num = n)
+            p.copy(num = n, concepto = limitarConcepto(p.concepto))
         }
 
         return Orden(
