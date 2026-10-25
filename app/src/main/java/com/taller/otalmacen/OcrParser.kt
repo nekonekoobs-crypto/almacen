@@ -147,25 +147,52 @@ object OcrParser {
         return mejor
     }
 
+    /**
+     * Convierte una línea del OCR en una o más filas. Si el OCR junta varias filas de la tabla
+     * en una sola línea, se separa una fila por cada altura distinta.
+     */
+    private fun separarFilas(l: Text.Line, k: Double): List<L> {
+        val b = l.boundingBox ?: return emptyList()
+        val p = l.cornerPoints
+        val alto = if (p != null && p.size >= 4) {
+            hypot((p[3].x - p[0].x).toDouble(), (p[3].y - p[0].y).toDouble()).toInt()
+        } else {
+            b.height()
+        }
+        val cx = (b.left + b.right) / 2
+        val els = l.elements.mapNotNull { e -> e.boundingBox?.let { bb -> Pair(e.text, bb.left) } }
+        val unica = listOf(L(l.text.trim(), b.left, cx, (b.centerY() - k * cx).toInt(), alto, els))
+
+        val conCaja = l.elements.filter { it.boundingBox != null }
+        if (conCaja.size < 2) return unica
+        val altoEl = conCaja.map { it.boundingBox!!.height() }.sorted()[conCaja.size / 2]
+        if (altoEl <= 0) return unica
+        val yDe = { e: Text.Element ->
+            val bb = e.boundingBox!!
+            bb.centerY() - k * bb.centerX()
+        }
+        val grupos = mutableListOf<MutableList<Text.Element>>()
+        for (e in conCaja.sortedBy { yDe(it) }) {
+            val g = grupos.lastOrNull()
+            if (g != null && abs(yDe(e) - yDe(g.last())) < altoEl * 0.8) g.add(e) else grupos.add(mutableListOf(e))
+        }
+        if (grupos.size < 2) return unica
+        return grupos.map { g ->
+            val ord = g.sortedBy { it.boundingBox!!.left }
+            val izq = ord.minOf { it.boundingBox!!.left }
+            val der = ord.maxOf { it.boundingBox!!.right }
+            val yy = ord.map { yDe(it) }.average().toInt()
+            L(
+                ord.joinToString(" ") { it.text }, izq, (izq + der) / 2, yy, altoEl,
+                ord.map { Pair(it.text, it.boundingBox!!.left) }
+            )
+        }
+    }
+
     // ---------- Interpretación ----------
     private fun parse(t: Text): Orden {
         val k = pendiente(t)
-        val lines = t.textBlocks.flatMap { it.lines }.mapNotNull { l ->
-            val b = l.boundingBox
-            if (b == null) {
-                null
-            } else {
-                val cx = (b.left + b.right) / 2
-                val p = l.cornerPoints
-                val alto = if (p != null && p.size >= 4) {
-                    hypot((p[3].x - p[0].x).toDouble(), (p[3].y - p[0].y).toDouble()).toInt()
-                } else {
-                    b.height()
-                }
-                val els = l.elements.mapNotNull { e -> e.boundingBox?.let { bb -> Pair(e.text, bb.left) } }
-                L(l.text.trim(), b.left, cx, (b.centerY() - k * cx).toInt(), alto, els)
-            }
-        }
+        val lines = t.textBlocks.flatMap { it.lines }.flatMap { l -> separarFilas(l, k) }
 
         if (lines.isEmpty()) return Orden(id = System.currentTimeMillis())
 
@@ -359,7 +386,17 @@ object OcrParser {
             val ok = p.num > 0 && (i == 0 || (p.num > ult && p.num <= ult + 3))
             val n = if (ok) p.num else ult + 1
             ult = n
-            p.copy(num = n, concepto = limitarConcepto(p.concepto))
+            p.copy(num = n)
+        }.flatMap { p ->
+            // Un concepto que pasa del límite se parte en piezas separadas; el usuario las revisa
+            partirConcepto(p.concepto).mapIndexed { i, parte ->
+                p.copy(
+                    id = p.id + 1000L * i,
+                    concepto = parte,
+                    pz = if (i == 0) p.pz else "1",
+                    num = if (i == 0) p.num else 0
+                )
+            }
         }
 
         return Orden(
