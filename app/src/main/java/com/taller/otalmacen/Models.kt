@@ -202,3 +202,15 @@ fun limitarConcepto(texto: String): String {
     }
     return t.substring(0, fin).trim()
 }
+
+/** Parte un concepto largo en varios, cada uno dentro del límite, sin perder texto. */
+fun partirConcepto(texto: String): List<String> {
+    val partes = mutableListOf<String>()
+    var resto = texto.trim()
+    while (resto.isNotEmpty()) {
+        val parte = limitarConcepto(resto)
+        partes.add(parte)
+        resto = resto.substring(parte.length).trim()
+    }
+    return if (partes.isEmpty()) listOf("") else partes
+}
