@@ -146,6 +146,8 @@ fun parecido(a: String, b: String): Double {
     val y = normConcepto(b)
     if (x.isEmpty() || y.isEmpty()) return 0.0
     if (x == y) return 1.0
+    val corto = minOf(x.length, y.length)
+    if (corto >= 18 && (x.startsWith(y) || y.startsWith(x))) return 1.0
     return 1.0 - distancia(x, y).toDouble() / maxOf(x.length, y.length)
 }
 
@@ -178,4 +180,25 @@ fun fusionarItems(actuales: List<Item>, nuevos: List<Item>): ResultadoFusion {
         }
     }
     return ResultadoFusion(lista, agregadas, repetidas)
+}
+
+// ---------- Límite de caracteres al capturar por foto ----------
+
+/** Máximo de caracteres por concepto cuando viene de una foto. Captura manual o edición no tienen límite. */
+const val MAX_CARACTERES_FOTO = 50
+
+/**
+ * Limita el concepto leído por OCR a MAX_CARACTERES_FOTO. Si el límite cae a mitad de una palabra,
+ * esa palabra se completa; las palabras siguientes ya no se agregan.
+ */
+fun limitarConcepto(texto: String): String {
+    val t = texto.trim()
+    if (t.length <= MAX_CARACTERES_FOTO) return t
+    val fin = if (t[MAX_CARACTERES_FOTO - 1] == ' ' || t[MAX_CARACTERES_FOTO] == ' ') {
+        MAX_CARACTERES_FOTO
+    } else {
+        val i = t.indexOf(' ', MAX_CARACTERES_FOTO)
+        if (i == -1) t.length else i
+    }
+    return t.substring(0, fin).trim()
 }
