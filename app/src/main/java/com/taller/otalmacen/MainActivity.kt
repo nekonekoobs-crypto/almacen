@@ -198,11 +198,31 @@ fun App(modo: Int, onModo: () -> Unit) {
         revision = null
     }
 
+    fun procesarArchivo(uri: Uri) {
+        cargando = true
+        mensaje = null
+        val anex = anexando
+        Documentos.leer(ctx, uri,
+            { nuevo ->
+                cargando = false
+                revisionAnexa = anex && actual != null
+                revision = nuevo
+            },
+            { err ->
+                cargando = false
+                mensaje = err
+            })
+    }
+
     val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (ok) procesar(fotoUri)
     }
     val galeria = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) procesar(uri)
+    }
+
+    val archivo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) procesarArchivo(uri)
     }
 
     BackHandler(enabled = revision != null || actual != null) {
@@ -233,6 +253,7 @@ fun App(modo: Int, onModo: () -> Unit) {
             mensaje = mensaje,
             onFoto = { anexando = false; camara.launch(fotoUri) },
             onGaleria = { anexando = false; galeria.launch("image/*") },
+            onArchivo = { anexando = false; archivo.launch(Documentos.TIPOS) },
             onNueva = {
                 val nueva = Orden(id = System.currentTimeMillis())
                 Store.save(base, nueva)
@@ -262,6 +283,7 @@ fun App(modo: Int, onModo: () -> Unit) {
             mensaje = mensaje,
             onFotoMas = { anexando = true; camara.launch(fotoUri) },
             onGaleriaMas = { anexando = true; galeria.launch("image/*") },
+            onArchivoMas = { anexando = true; archivo.launch(Documentos.TIPOS) },
             onFotoBaja = { p ->
                 piezaFotoId = p.id
                 camaraBaja.launch(bajaUri)
@@ -308,6 +330,7 @@ fun ListaScreen(
     mensaje: String?,
     onFoto: () -> Unit,
     onGaleria: () -> Unit,
+    onArchivo: () -> Unit,
     onNueva: () -> Unit,
     onAbrir: (Orden) -> Unit,
     onBorrar: (Orden) -> Unit
@@ -375,6 +398,11 @@ fun ListaScreen(
             }
         }
         item {
+            OutlinedButton(onClick = onArchivo, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("Importar archivo (Excel, PDF, Word)")
+            }
+        }
+        item {
             OutlinedButton(onClick = onNueva, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                 Text("Nueva OT vacía")
             }
@@ -430,6 +458,7 @@ fun DetalleScreen(
     onVolver: () -> Unit,
     onFotoMas: () -> Unit,
     onGaleriaMas: () -> Unit,
+    onArchivoMas: () -> Unit,
     onFotoBaja: (Item) -> Unit,
     onExportar: () -> Unit
 ) {
@@ -498,6 +527,9 @@ fun DetalleScreen(
                 }
                 OutlinedButton(onClick = onGaleriaMas, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                     Text("Agregar desde galería")
+                }
+                OutlinedButton(onClick = onArchivoMas, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("Agregar desde archivo (Excel, PDF, Word)")
                 }
                 if (cargando) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
