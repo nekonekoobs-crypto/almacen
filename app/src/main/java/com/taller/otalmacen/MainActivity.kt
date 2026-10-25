@@ -127,6 +127,8 @@ fun App(modo: Int, onModo: () -> Unit) {
     var cargando by remember { mutableStateOf(false) }
     var mensaje by remember { mutableStateOf<String?>(null) }
     var anexando by remember { mutableStateOf(false) }
+    var revision by remember { mutableStateOf<Orden?>(null) }
+    var revisionAnexa by remember { mutableStateOf(false) }
 
     val fotoFile = remember {
         val d = File(ctx.cacheDir, "fotos")
@@ -170,22 +172,30 @@ fun App(modo: Int, onModo: () -> Unit) {
         OcrParser.leer(ctx, uri,
             { nuevo ->
                 cargando = false
-                val d = actual
-                val res = if (anex && d != null) fusionar(d, nuevo) else nuevo
-                if (anex && d != null) {
-                    val agregadas = res.items.size - d.items.size
-                    val repetidas = nuevo.items.size - agregadas
-                    mensaje = "Se agregaron $agregadas piezas nuevas" +
-                        if (repetidas > 0) " y se omitieron $repetidas repetidas." else "."
-                }
-                Store.save(base, res)
-                ordenes = Store.loadAll(base)
-                actual = res
+                revisionAnexa = anex && actual != null
+                revision = nuevo
             },
             { err ->
                 cargando = false
                 mensaje = "No se pudo leer la foto: $err"
             })
+    }
+
+    fun guardarRevision() {
+        val nuevo = revision ?: return
+        val d = actual
+        val anex = revisionAnexa
+        val res = if (anex && d != null) fusionar(d, nuevo) else nuevo
+        if (anex && d != null) {
+            val agregadas = res.items.size - d.items.size
+            val repetidas = nuevo.items.size - agregadas
+            mensaje = "Se agregaron $agregadas piezas nuevas" +
+                if (repetidas > 0) " y se omitieron $repetidas repetidas." else "."
+        }
+        Store.save(base, res)
+        ordenes = Store.loadAll(base)
+        actual = res
+        revision = null
     }
 
     val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -195,13 +205,26 @@ fun App(modo: Int, onModo: () -> Unit) {
         if (uri != null) procesar(uri)
     }
 
-    BackHandler(enabled = actual != null) {
-        actual = null
-        ordenes = Store.loadAll(base)
+    BackHandler(enabled = revision != null || actual != null) {
+        if (revision != null) {
+            revision = null
+        } else {
+            actual = null
+            ordenes = Store.loadAll(base)
+        }
     }
 
+    val rev = revision
     val o = actual
-    if (o == null) {
+    if (rev != null) {
+        RevisionScreen(
+            orden = rev,
+            anexando = revisionAnexa,
+            onCambio = { n -> revision = n },
+            onGuardar = { guardarRevision() },
+            onCancelar = { revision = null }
+        )
+    } else if (o == null) {
         ListaScreen(
             modo = modo,
             onModo = onModo,
