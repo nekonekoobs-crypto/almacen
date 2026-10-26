@@ -26,7 +26,7 @@ object Supa {
     const val LLAVE = "sb_publishable_SyqWOd6GVH_AtxI4qnIZnw_u6C34uB1"
 
     /** ID de cliente "Web" de Google Cloud (termina en .apps.googleusercontent.com). */
-    const val GOOGLE_WEB_CLIENT_ID = "PEGA_AQUI_EL_CLIENT_ID_WEB"
+    const val GOOGLE_WEB_CLIENT_ID = "106435452047-bkq9tcvut1obv253pvkc0s65hnsnr7gg.apps.googleusercontent.com"
 
     private val JSON = mapOf("Content-Type" to "application/json")
 
