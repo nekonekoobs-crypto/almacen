@@ -53,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -68,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import java.io.File
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,6 +109,7 @@ class MainActivity : ComponentActivity() {
 }
 
 val LocalOscuro = compositionLocalOf { true }
+val LocalSoloLectura = compositionLocalOf { false }
 
 class Paleta(val verde: Color, val rojo: Color, val gris: Color, val texto: Color, val error: Color)
 
@@ -129,6 +132,58 @@ fun App(modo: Int, onModo: () -> Unit) {
     var anexando by remember { mutableStateOf(false) }
     var revision by remember { mutableStateOf<Orden?>(null) }
     var revisionAnexa by remember { mutableStateOf(false) }
+
+    var sesion by remember { mutableStateOf(Supa.sesion(ctx)) }
+    var estadoSync by remember { mutableStateOf("") }
+    var sincronizando by remember { mutableStateOf(false) }
+    var verUsuarios by remember { mutableStateOf(false) }
+    var usuariosPend by remember { mutableStateOf(0) }
+    val soloLectura = sesion?.rol != "almacenista"
+
+    fun sincronizar(bajar: Boolean) {
+        if (sesion == null) return
+        sincronizando = true
+        Sync.sincronizar(ctx, bajar) { r ->
+            sincronizando = false
+            estadoSync = r.mensaje
+            if (r.usuariosPendientes >= 0) usuariosPend = r.usuariosPendientes
+            if (r.sinSesion) sesion = null
+            ordenes = Store.loadAll(base)
+        }
+    }
+
+    /** Guarda en el teléfono y, si es almacenista, programa la subida a la nube. */
+    fun guardar(o: Orden) {
+        Store.save(base, o)
+        if (!soloLectura) {
+            Sync.marcarPendiente(ctx, o.id)
+            Sync.programarEnvio(ctx) { r ->
+                estadoSync = r.mensaje
+                if (r.sinSesion) sesion = null
+            }
+        }
+    }
+
+    fun borrarOrden(o: Orden) {
+        limpiarFotos(base, o, null)
+        Store.delete(base, o.id)
+        if (!soloLectura) {
+            Sync.marcarBorrada(ctx, o)
+            Sync.programarEnvio(ctx) { r ->
+                estadoSync = r.mensaje
+                if (r.sinSesion) sesion = null
+            }
+        }
+        ordenes = Store.loadAll(base)
+    }
+
+    // Al abrir la app y cada minuto: sube lo pendiente y baja lo nuevo (si no se está editando)
+    LaunchedEffect(sesion?.email) {
+        while (sesion != null) {
+            if (actual == null && revision == null) sincronizar(true)
+            delay(60_000L)
+        }
+    }
 
     val fotoFile = remember {
         val d = File(ctx.cacheDir, "fotos")
@@ -156,7 +211,7 @@ fun App(modo: Int, onModo: () -> Unit) {
             }
             if (res.isNotBlank()) {
                 val n = d.copy(items = d.items.map { x -> if (x.id == id) x.copy(fotoBaja = res) else x })
-                Store.save(base, n)
+                guardar(n)
                 limpiarFotos(base, d, n)
                 actual = n
             } else {
@@ -192,7 +247,7 @@ fun App(modo: Int, onModo: () -> Unit) {
             mensaje = "Se agregaron $agregadas piezas nuevas" +
                 if (repetidas > 0) " y se omitieron $repetidas repetidas." else "."
         }
-        Store.save(base, res)
+        guardar(res)
         ordenes = Store.loadAll(base)
         actual = res
         revision = null
@@ -225,8 +280,10 @@ fun App(modo: Int, onModo: () -> Unit) {
         if (uri != null) procesarArchivo(uri)
     }
 
-    BackHandler(enabled = revision != null || actual != null) {
-        if (revision != null) {
+    BackHandler(enabled = revision != null || actual != null || verUsuarios) {
+        if (verUsuarios) {
+            verUsuarios = false
+        } else if (revision != null) {
             revision = null
         } else {
             actual = null
@@ -234,15 +291,24 @@ fun App(modo: Int, onModo: () -> Unit) {
         }
     }
 
+    val ses = sesion
     val rev = revision
     val o = actual
-    if (rev != null) {
+    CompositionLocalProvider(LocalSoloLectura provides soloLectura) {
+    if (ses == null) {
+        LoginScreen(onSesion = { sesion = it })
+    } else if (rev != null) {
         RevisionScreen(
             orden = rev,
             anexando = revisionAnexa,
             onCambio = { n -> revision = n },
             onGuardar = { guardarRevision() },
             onCancelar = { revision = null }
+        )
+    } else if (verUsuarios && !soloLectura) {
+        UsuariosScreen(
+            onVolver = { verUsuarios = false },
+            onPendientes = { usuariosPend = it }
         )
     } else if (o == null) {
         ListaScreen(
@@ -256,24 +322,34 @@ fun App(modo: Int, onModo: () -> Unit) {
             onArchivo = { anexando = false; archivo.launch(Documentos.TIPOS) },
             onNueva = {
                 val nueva = Orden(id = System.currentTimeMillis())
-                Store.save(base, nueva)
+                guardar(nueva)
                 ordenes = Store.loadAll(base)
                 actual = nueva
             },
             onAbrir = { actual = it },
-            onBorrar = {
-                limpiarFotos(base, it, null)
-                Store.delete(base, it.id)
-                ordenes = Store.loadAll(base)
+            onBorrar = { borrarOrden(it) },
+            soloLectura = soloLectura,
+            correo = ses.email,
+            estado = estadoSync,
+            sincronizando = sincronizando,
+            onActualizar = { sincronizar(true) },
+            usuariosPendientes = usuariosPend,
+            onUsuarios = { verUsuarios = true },
+            onSalir = {
+                Supa.cerrarSesion(ctx)
+                sesion = null
+                verUsuarios = false
             }
         )
     } else {
         DetalleScreen(
             orden = o,
             onCambio = { n ->
-                Store.save(base, n)
-                limpiarFotos(base, o, n)
-                actual = n
+                if (!soloLectura) {
+                    guardar(n)
+                    limpiarFotos(base, o, n)
+                    actual = n
+                }
             },
             onVolver = {
                 actual = null
@@ -290,6 +366,7 @@ fun App(modo: Int, onModo: () -> Unit) {
             },
             onExportar = { exportar(ctx, o) }
         )
+    }
     }
 }
 
@@ -333,7 +410,15 @@ fun ListaScreen(
     onArchivo: () -> Unit,
     onNueva: () -> Unit,
     onAbrir: (Orden) -> Unit,
-    onBorrar: (Orden) -> Unit
+    onBorrar: (Orden) -> Unit,
+    soloLectura: Boolean,
+    correo: String,
+    estado: String,
+    sincronizando: Boolean,
+    onActualizar: () -> Unit,
+    usuariosPendientes: Int,
+    onUsuarios: () -> Unit,
+    onSalir: () -> Unit
 ) {
     val pal = paleta()
     var busqueda by remember { mutableStateOf("") }
@@ -388,6 +473,27 @@ fun ListaScreen(
             }
         }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    correo + " · " + (if (soloLectura) "Solo lectura" else "Almacenista"),
+                    fontSize = 13.sp
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = onActualizar, enabled = !sincronizando) { Text("Actualizar") }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onSalir) { Text("Salir") }
+                }
+                if (!soloLectura) {
+                    OutlinedButton(onClick = onUsuarios, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (usuariosPendientes > 0) "Usuarios ($usuariosPendientes por aprobar)" else "Usuarios")
+                    }
+                }
+                if (sincronizando) Text("Sincronizando…", fontSize = 13.sp)
+                else if (estado.isNotBlank()) Text(estado, fontSize = 13.sp)
+            }
+        }
+        if (!soloLectura) {
+        item {
             Button(onClick = onFoto, modifier = Modifier.fillMaxWidth().height(64.dp)) {
                 Text("Tomar foto de la OT", fontSize = 18.sp)
             }
@@ -406,6 +512,7 @@ fun ListaScreen(
             OutlinedButton(onClick = onNueva, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                 Text("Nueva OT vacía")
             }
+        }
         }
         item {
             OutlinedTextField(
@@ -440,8 +547,10 @@ fun ListaScreen(
                 Column(Modifier.padding(12.dp)) {
                     Text("OT ${o.ot.ifBlank { "(sin número)" }}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("${o.unidad} · ${o.seguro} · ${o.items.size} piezas")
-                    Row {
-                        TextButton(onClick = { porBorrar = o }) { Text("Borrar") }
+                    if (!soloLectura) {
+                        Row {
+                            TextButton(onClick = { porBorrar = o }) { Text("Borrar") }
+                        }
                     }
                 }
             }
@@ -463,6 +572,7 @@ fun DetalleScreen(
     onExportar: () -> Unit
 ) {
     val pal = paleta()
+    val ro = LocalSoloLectura.current
     val campos = listOf(
         CampoUi(1) { CampoTexto("OT", orden.ot) { v -> onCambio(orden.copy(ot = v)) } },
         CampoUi(1) { CampoTexto("Seguro", orden.seguro) { v -> onCambio(orden.copy(seguro = v)) } },
@@ -522,6 +632,7 @@ fun DetalleScreen(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!ro) {
                 Button(onClick = onFotoMas, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                     Text("Capturar más fotos", fontSize = 17.sp)
                 }
@@ -530,6 +641,7 @@ fun DetalleScreen(
                 }
                 OutlinedButton(onClick = onArchivoMas, modifier = Modifier.fillMaxWidth().height(48.dp)) {
                     Text("Agregar desde archivo (Excel, PDF, Word)")
+                }
                 }
                 if (cargando) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -572,6 +684,7 @@ fun DetalleScreen(
                 onVerFoto = { nombre -> fotoAmpliada = nombre }
             )
         }
+        if (!ro) {
         item {
             OutlinedButton(
                 onClick = {
@@ -580,6 +693,7 @@ fun DetalleScreen(
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) { Text("Agregar pieza manualmente") }
+        }
         }
         item { Spacer(Modifier.height(40.dp)) }
     }
@@ -594,6 +708,7 @@ fun FilaPieza(
     onVerFoto: (String) -> Unit
 ) {
     val pal = paleta()
+    val ro = LocalSoloLectura.current
     val fondo = when {
         p.alta -> pal.verde
         p.baja -> pal.rojo
@@ -606,6 +721,7 @@ fun FilaPieza(
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(
+                    readOnly = ro,
                     value = if (p.num > 0) p.num.toString() else "",
                     onValueChange = { v -> onChange(p.copy(num = v.filter { c -> c.isDigit() }.take(3).toIntOrNull() ?: 0)) },
                     label = { Text("No.") },
@@ -613,6 +729,7 @@ fun FilaPieza(
                     modifier = Modifier.width(72.dp)
                 )
                 OutlinedTextField(
+                    readOnly = ro,
                     value = p.pz,
                     onValueChange = { v -> onChange(p.copy(pz = v)) },
                     label = { Text("PZ") },
@@ -620,6 +737,7 @@ fun FilaPieza(
                     modifier = Modifier.width(80.dp)
                 )
                 OutlinedTextField(
+                    readOnly = ro,
                     value = p.concepto,
                     onValueChange = { v -> onChange(p.copy(concepto = v)) },
                     label = { Text("Concepto") },
@@ -627,6 +745,7 @@ fun FilaPieza(
                 )
             }
             OutlinedTextField(
+                    readOnly = ro,
                 value = p.proveedor,
                 onValueChange = { v -> onChange(p.copy(proveedor = v)) },
                 label = { Text("Proveedor") },
@@ -635,25 +754,27 @@ fun FilaPieza(
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
+                    enabled = !ro,
                     checked = p.alta,
                     onCheckedChange = { v -> onChange(p.copy(alta = v, baja = if (v) false else p.baja)) }
                 )
                 Text("Alta")
                 Spacer(Modifier.width(12.dp))
                 Checkbox(
+                    enabled = !ro,
                     checked = p.baja,
                     onCheckedChange = { v -> onChange(p.copy(baja = v, alta = if (v) false else p.alta)) }
                 )
                 Text("Baja")
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onBorrar) { Text("Borrar") }
+                if (!ro) TextButton(onClick = onBorrar) { Text("Borrar") }
             }
             if (p.baja) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedButton(onClick = onFoto) { Text("📷 Foto de salida") }
+                    if (!ro) OutlinedButton(onClick = onFoto) { Text("📷 Foto de salida") }
                     if (p.fotoBaja.isNotBlank()) {
                         MiniFoto(p.fotoBaja) { onVerFoto(p.fotoBaja) }
                     }
@@ -761,6 +882,7 @@ fun CampoTexto(label: String, valor: String, onCambio: (String) -> Unit) {
     OutlinedTextField(
         value = valor,
         onValueChange = onCambio,
+        readOnly = LocalSoloLectura.current,
         label = { Text(label, maxLines = 1) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
@@ -783,7 +905,7 @@ fun CampoFecha(label: String, valor: String, onCambio: (String) -> Unit) {
         Box(
             Modifier
                 .matchParentSize()
-                .clickable {
+                .clickable(enabled = !LocalSoloLectura.current) {
                     val hoy = java.util.Calendar.getInstance()
                     val p = fechaAPartes(valor)
                     val dia = p?.first ?: hoy.get(java.util.Calendar.DAY_OF_MONTH)

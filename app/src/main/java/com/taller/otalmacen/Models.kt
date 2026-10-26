@@ -36,6 +36,16 @@ object Store {
         File(dir(base), "${o.id}.json").writeText(toJson(o).toString())
     }
 
+    fun cargar(base: File, id: Long): Orden? {
+        val f = File(dir(base), "$id.json")
+        if (!f.exists()) return null
+        return try {
+            fromJson(JSONObject(f.readText()))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun delete(base: File, id: Long) {
         File(dir(base), "$id.json").delete()
     }
@@ -51,7 +61,7 @@ object Store {
         }.sortedByDescending { it.id }
     }
 
-    private fun toJson(o: Orden): JSONObject {
+    fun toJson(o: Orden): JSONObject {
         val arr = JSONArray()
         for (i in o.items) {
             arr.put(
@@ -80,7 +90,7 @@ object Store {
             .put("items", arr)
     }
 
-    private fun fromJson(j: JSONObject): Orden {
+    fun fromJson(j: JSONObject): Orden {
         val arr = j.optJSONArray("items") ?: JSONArray()
         val items = (0 until arr.length()).map { n ->
             val x = arr.getJSONObject(n)
