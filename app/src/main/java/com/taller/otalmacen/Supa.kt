@@ -26,7 +26,7 @@ object Supa {
     const val LLAVE = "sb_publishable_SyqWOd6GVH_AtxI4qnIZnw_u6C34uB1"
 
     /** ID de cliente "Web" de Google Cloud (termina en .apps.googleusercontent.com). */
-    const val GOOGLE_WEB_CLIENT_ID = "106435452047-bkq9tcvut1obv253pvkc0s65hnsnr7gg.apps.googleusercontent.com"
+    const val GOOGLE_WEB_CLIENT_ID = "PEGA_AQUI_EL_CLIENT_ID_WEB"
 
     private val JSON = mapOf("Content-Type" to "application/json")
 
@@ -174,11 +174,17 @@ object Supa {
 
     /** Rol de la persona conectada, o null si no está en la lista de autorizados. */
     fun consultarRol(token: String): String? {
-        val r = peticion("GET", "/rest/v1/usuarios?select=rol&limit=1", null, token)
+        // La función mi_rol() de la base devuelve el rol de quien está conectado
+        // (leer la tabla completa devolvería la fila de otra persona si eres almacenista).
+        val r = peticion("POST", "/rest/v1/rpc/mi_rol", "{}".toByteArray(), token, JSON)
         if (!r.ok) throw IllegalStateException("No se pudo verificar la cuenta (" + errorDe(r) + ").")
-        val arr = JSONArray(r.texto)
-        if (arr.length() == 0) return null
-        return arr.getJSONObject(0).optString("rol").ifBlank { null }
+        val t = r.texto.trim()
+        if (t.isEmpty() || t == "null") return null
+        return try {
+            JSONArray("[$t]").getString(0).ifBlank { null }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
