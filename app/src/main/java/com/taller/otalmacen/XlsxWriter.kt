@@ -24,7 +24,7 @@ object XlsxWriter {
         sb.append("<worksheet xmlns=\"$NS\">")
         sb.append("<sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"11\" topLeftCell=\"A12\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>")
         sb.append("<cols>")
-        val anchos = listOf(6, 8, 55, 26, 15, 15, 13, 8)
+        val anchos = listOf(18, 55, 26, 15, 15, 13, 8, 16, 40)
         anchos.forEachIndexed { i, w ->
             sb.append("<col min=\"${i + 1}\" max=\"${i + 1}\" width=\"$w\" customWidth=\"1\"/>")
         }
@@ -40,7 +40,7 @@ object XlsxWriter {
             sb.append("<row r=\"$r\">").append(str("A$r", k, 5)).append(str("B$r", v, 0)).append("</row>")
         }
 
-        val titulos = listOf("No.", "PZ.", "CONCEPTO", "PROVEEDOR", "ALTA ALMACÉN", "BAJA ALMACÉN", "EXISTENCIA", "OK")
+        val titulos = listOf("PZ.", "CONCEPTO", "PROVEEDOR", "ALTA ALMACÉN", "BAJA ALMACÉN", "EXISTENCIA", "OK", "ESTADO", "DESCRIPCIÓN")
         sb.append("<row r=\"11\">")
         titulos.forEachIndexed { i, t -> sb.append(str("${'A' + i}11", t, 1)) }
         sb.append("</row>")
@@ -50,18 +50,30 @@ object XlsxWriter {
             val e = when {
                 p.alta -> 3
                 p.baja -> 4
+                p.prestamo -> 6
+                p.devolucion -> 7
+                p.sobrante -> 8
                 else -> 2
+            }
+            val estado = when {
+                p.alta -> "Alta"
+                p.baja -> "Baja"
+                p.prestamo -> "Préstamo"
+                p.devolucion -> "Devolución"
+                p.sobrante -> "Sobrante"
+                else -> ""
             }
             val n = p.pz.toDoubleOrNull()
             sb.append("<row r=\"$r\">")
-            sb.append(if (p.num > 0) num("A$r", p.num.toDouble(), e) else vacia("A$r", e))
-            sb.append(if (n != null) num("B$r", n, e) else str("B$r", p.pz, e))
-            sb.append(str("C$r", p.concepto, e))
-            sb.append(if (p.proveedor.isBlank()) vacia("D$r", e) else str("D$r", p.proveedor, e))
-            sb.append(if (p.alta) num("E$r", n ?: 1.0, e) else vacia("E$r", e))
-            sb.append(if (p.baja) num("F$r", n ?: 1.0, e) else vacia("F$r", e))
-            sb.append("<c r=\"G$r\" s=\"$e\"><f>E$r-F$r</f></c>")
-            sb.append(vacia("H$r", e))
+            sb.append(if (n != null) num("A$r", n, e) else str("A$r", p.pz, e))
+            sb.append(str("B$r", p.concepto, e))
+            sb.append(if (p.proveedor.isBlank()) vacia("C$r", e) else str("C$r", p.proveedor, e))
+            sb.append(if (p.alta) num("D$r", n ?: 1.0, e) else vacia("D$r", e))
+            sb.append(if (p.baja) num("E$r", n ?: 1.0, e) else vacia("E$r", e))
+            sb.append("<c r=\"F$r\" s=\"$e\"><f>D$r-E$r</f></c>")
+            sb.append(vacia("G$r", e))
+            sb.append(if (estado.isBlank()) vacia("H$r", e) else str("H$r", estado, e))
+            sb.append(if (p.prestamo && p.descPrestamo.isNotBlank()) str("I$r", p.descPrestamo, e) else vacia("I$r", e))
             sb.append("</row>")
         }
         sb.append("</sheetData></worksheet>")
@@ -73,25 +85,31 @@ object XlsxWriter {
 <font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>
 <font><b/><sz val="10"/><name val="Arial"/></font>
 </fonts>
-<fills count="5">
+<fills count="8">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FF4F6F52"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFA5D6A7"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFEF9A9A"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFF176"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF90CAF9"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFBCAAA4"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left style="thin"><color rgb="FF999999"/></left><right style="thin"><color rgb="FF999999"/></right><top style="thin"><color rgb="FF999999"/></top><bottom style="thin"><color rgb="FF999999"/></bottom><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6">
+<cellXfs count="9">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
 <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
 <xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="0" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="0" fillId="7" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>"""
